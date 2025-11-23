@@ -21,7 +21,6 @@ class SurecListesiEkrani extends StatelessWidget {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  // GecmisOturumlarEkrani constructor'ından 'const' kelimesini kaldırdık
                   builder: (context) => GecmisOturumlarEkrani(), 
                 ),
               );

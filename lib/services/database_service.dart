@@ -58,14 +58,17 @@ class DatabaseService {
       path,
       version: 1, // Dosyayı ilk kopyalamada versiyon 1 olarak açar.
       onCreate: (db, version) {
-        // ÖNEMLİ: Statik tabloları (SORULAR, BELGELER, SUREC) BURAYA YAZMA!
-        // Onlar zaten kopyalanan .db dosyasında var.
-        
-        // Sadece **dinamik olarak** kullanıcı tarafından doldurulacak tabloları (örneğin oturum kayıtları) buraya ekle.
+
         db.execute(
-          "CREATE TABLE KULLANICI_OTURUMU(id INTEGER PRIMARY KEY, tarih TEXT, sonuc TEXT)",
+          "CREATE TABLE KULLANICI_OTURUMU("
+          "id INTEGER PRIMARY KEY,"
+          "Surec_ID INTEGER,"
+          "Soru_ID INTEGER,"
+          "Verilen_Cevap TEXT,"
+          "Cevap_Tarihi TEXT,"
+          "Aktif_Mi INTEGER)",
         );
-        print("Dinamik tablolar (varsa) oluşturuldu.");
+        print("KULLANICI_OTURUMU tablosu güncel şema ile oluşturuldu.");
       },
     );
     return _database!;

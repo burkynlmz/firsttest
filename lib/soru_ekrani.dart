@@ -82,8 +82,8 @@ class _SoruEkraniState extends State<SoruEkrani> {
       await _soruyuYukle(sId); // _soruyuYukle de async olabilir, await eklemek güvenlidir
     } else {
       // SONUÇ AŞAMASI: _sonucuGoster çağrısının önüne await EKLEMEK ZORUNLUDUR!
-      debugPrint("Sonucu göster çağrılıyor ${mevcutSoru!['Sonuc_Tipi']} , ${mevcutSoru!['ilgili_Belge_ID']}");
-      await _sonucuGoster(mevcutSoru!['Sonuc_Tipi'], mevcutSoru!['ilgili_Belge_ID']);
+      debugPrint("Sonucu göster çağrılıyor ${mevcutSoru!['Sonuc_Tipi']} , ${mevcutSoru!['Ilgili_Belge_ID']}");
+      await _sonucuGoster(mevcutSoru!['Sonuc_Tipi'], mevcutSoru!['Ilgili_Belge_ID']);
     }
   }
   
@@ -125,7 +125,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
       // Kaydedilecek verileri hazırla
       Map<String, dynamic> row = {
         'Surec_ID': widget.surecId, // İlgili Süreç ID'si
-        'SORU_ID': mevcutSoruId, // eN SOn ulaşılan soru ID'si
+        'Soru_ID': mevcutSoruId, // eN SOn ulaşılan soru ID'si
         'Verilen_Cevap': "Tip: $sonucTipi, Belge: ${belgeAd ?? 'Yok'}", //cevap metni ve sonuç bilgisi kaydeder
         'Cevap_Tarihi': DateTime.now().toIso8601String(), // cevap tarihi kaydet
         'Aktif_Mi': 0 // Süreç tamamlandı
