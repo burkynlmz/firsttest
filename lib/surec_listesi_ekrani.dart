@@ -29,7 +29,7 @@ class SurecListesiEkrani extends StatelessWidget {
         ],
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
-        // 1. Database'den tüm süreçleri çek
+        // Database'den tüm süreçleri çek
         future: dbService.getAllSurec(), 
         builder: (context, snapshot) {
           
@@ -61,11 +61,11 @@ class SurecListesiEkrani extends StatelessWidget {
                   title: Text(surec['Baslik'] ?? 'Başlıksız Süreç', style: const TextStyle(fontWeight: FontWeight.bold)),
                   trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                   onTap: () {
-                    // 2. Süreç seçildiğinde Soru Ekranına geçiş yap
+                    // Süreç seçildiğinde Soru Ekranına geçiş yap
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        // Seçilen sürecin ID'sini SoruEkranına taşıyoruz
+                        // Seçilen sürecin ID'sini SoruEkranına taşıma
                         builder: (context) => SoruEkrani(surecId: surec['Surec_ID']),
                       ),
                     );

@@ -20,15 +20,15 @@ class DatabaseService {
 
   Future<Database> _initDatabase() async {
 
-    // 1. Veritabanı klasör yolunu al.
+    // Veritabanı klasör yolunu al.
     var databasesPath = await getDatabasesPath();
     var path = join(databasesPath, "burokrasi_yoneticisi.db");
     
-    // 2. Dosyanın cihazda varlığını kontrol et.
+    // Dosyanın cihazda varlığını kontrol et.
     var exists = await databaseExists(path);
 
     if (!exists) {
-      // 3. Eğer dosya yoksa (Uygulamanın ilk çalışması):
+      //Eğer dosya yoksa (Uygulamanın ilk çalışması):
       
       print("Veritabanı (${basename(path)}) bulunamadı, assets'ten kopyalanıyor...");
 
@@ -52,8 +52,7 @@ class DatabaseService {
       print("Veritabanı zaten mevcut. Kopyalama atlandı.");
     }
 
-    // 4. Veritabanını aç.
-    // Bu aşamada artık "version" kontrolü ve onCreate/onUpgrade metotları çalışır.
+    // Veritabanını aç.
     _database = await openDatabase(
       path,
       version: 1, // Dosyayı ilk kopyalamada versiyon 1 olarak açar.
@@ -114,13 +113,6 @@ class DatabaseService {
     );
     return result.isNotEmpty ? result.first : null;
   }
-
-  /* BU FONKSİYONUN DÖNDÜRDÜĞÜ VERİLER ÖNEMLİ: yukarıdaki sorular tablosu
-  - Soru_Metni: Kullanıcıya gösterilecek soru.
-  - Ileri_Soru_ID_Evet / Hayir: Kullanıcının cevabına göre sonraki Soru_ID (veya Sonuc_Tipi ise 0/null).
-  - Belge_ID_Gerekiyorsa: Eğer soru bir belgeye yönlendiriyorsa, Belge_ID'si.
-  - Sonuc_Tipi: İşlemin bittiğini ve bir sonuca ulaşıldığını belirtir (örn. "BelgeGerekli", "IslemBitti").
-  */
 
   // Belirli bir Belge_ID'ye ait tüm detayları (Ad, Açıklama, Gerekli Yer) getirir.
   Future<Map<String, dynamic>?> getDocumentById(int belgeId) async {

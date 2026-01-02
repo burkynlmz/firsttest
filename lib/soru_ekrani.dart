@@ -14,7 +14,7 @@ class SoruEkrani extends StatefulWidget {
 class _SoruEkraniState extends State<SoruEkrani> {
   final DatabaseService dbService = DatabaseService();
   
-  // Hangi soruda olduğumuzu tutan ID. -1 başlangıç değeri olabilir.
+  // Hangi soruda olduğumuzu tutan ID.
   int? mevcutSoruId; 
   Map<String, dynamic>? mevcutSoru;
 
@@ -27,13 +27,13 @@ class _SoruEkraniState extends State<SoruEkrani> {
 
   // Süreç ID'sine göre başlangıç sorusunu bulup yükleyen ana fonksiyon
   Future<void> _baslangicSorusunuYukle() async {
-    // 1. Süreç ID'si ile Baslangic_Soru_ID'yi bul
+    // Süreç ID'si ile Baslangic_Soru_ID'yi bul
     final surecData = await dbService.getSurecById(widget.surecId);
     
     if (surecData != null && surecData['Baslangic_Soru_ID'] != null) {
       int baslangicSoruId = surecData['Baslangic_Soru_ID'];
       
-      // 2. Başlangıç Soru ID'si ile soruyu çek
+      // Başlangıç Soru ID'si ile soruyu çek
       await _soruyuYukle(baslangicSoruId);
     } else {
       // Hata durumu: Başlangıç sorusu bulunamadı
@@ -52,14 +52,12 @@ class _SoruEkraniState extends State<SoruEkrani> {
     });
   }
 
-  // --- CEVAP İŞLEME MANTIĞI BURAYA GELECEK ---
+  // --- CEVAP İŞLEME MANTIĞI ---
   Future<void> _cevapVer(bool cevap) async{
     if (mevcutSoru == null) return;
 
-    // print('--- Cevap Verildi ---');
-    // print('Mevcut Soru ID: $mevcutSoruId');
        
-    // 1. Sonraki ID'yi veritabanından dinamik olarak çek
+    // Sonraki ID'yi veritabanından dinamik olarak çek
     final dynamic rawSonrakiId = cevap 
       ? mevcutSoru!['Cevap_Evet_Soru_ID'] 
       : mevcutSoru!['Cevap_Hayir_Soru_ID'];
@@ -67,8 +65,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
     // print('Kullanıcı Cevabı: ${cevap ? "EVET" : "HAYIR"}');
     // print('Veritabanından Gelen HAM ID: $rawSonrakiId (Türü: ${rawSonrakiId.runtimeType})');
 
-    // 2. Çekilen değeri güvenli bir şekilde tam sayıya (int) çevir.
-    // Bu, değerin String, null veya başka bir türde gelmesi durumunda bile hatayı önler.
+    // Çekilen değeri tam sayıya (int) çevir.
     final int? sonrakiId = (rawSonrakiId != null) 
           ? int.tryParse(rawSonrakiId.toString()) 
           : null;
@@ -76,12 +73,12 @@ class _SoruEkraniState extends State<SoruEkrani> {
     // print('İşlenen (int) Sonraki ID: $sonrakiId');
     int sId = sonrakiId ?? 0;
     debugPrint("Sonraki Soru ID'si: $sId");
-    // 3. Karar Mantığı
+    // Karar Mantığı
     if (sId > 0) {
       // Bir sonraki soruya geç
-      await _soruyuYukle(sId); // _soruyuYukle de async olabilir, await eklemek güvenlidir
+      await _soruyuYukle(sId); 
     } else {
-      // SONUÇ AŞAMASI: _sonucuGoster çağrısının önüne await EKLEMEK ZORUNLUDUR!
+      // SONUÇ AŞAMASI
       debugPrint("Sonucu göster çağrılıyor ${mevcutSoru!['Sonuc_Tipi']} , ${mevcutSoru!['Ilgili_Belge_ID']}");
       await _sonucuGoster(mevcutSoru!['Sonuc_Tipi'], mevcutSoru!['Ilgili_Belge_ID']);
     }
@@ -91,7 +88,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
     String sonucMetni = 'Süreç tamamlandı. Sonuç: $sonucTipi.';
     String? belgeAd = 'Yok';
     debugPrint("Sonucu göster girildi. Sonuç Tipi: $sonucTipi, Belge ID: $belgeId");
-    // 1. Eğer Belge ID'si varsa, belge detaylarını çek
+    // Eğer Belge ID'si varsa, belge detaylarını çek
     if (belgeId != null && belgeId > 0) {
       final belgeData = await dbService.getDocumentById(belgeId);
       if (belgeData != null) {
@@ -100,7 +97,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
         sonucMetni += "\n\n— GEREKLİ BELGE —\nBelge Adı: ${belgeAd}\nAçıklama: ${belgeData['Belge_Aciklama'] ?? 'Belge açıklaması bulunamadı.'}";
       }
     }
-    // 2. KULLANICI_OTURUMU tablosuna kaydı yap
+    // KULLANICI_OTURUMU tablosuna kaydı yap
     final kayitBasarili = await _oturumKaydiYap(sonucTipi, belgeAd);
 
     if (kayitBasarili) {
@@ -109,7 +106,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
        sonucMetni += "\n\n(UYARI: Oturum kaydedilemedi!)";
     }
 
-    // 3. Ekranı Sonuç Mesajı ile güncelle
+    // Ekranı Sonuç Mesajı ile güncelle
     setState(() {
       mevcutSoru = {
         'Soru_Metni': sonucMetni, 
@@ -119,10 +116,10 @@ class _SoruEkraniState extends State<SoruEkrani> {
     });
   }
 
-  // 🟢 YENİ _oturumKaydiYap FONKSİYONU (Kullanıcı Oturumunu kaydeder)
+  // Kullanıcı Oturumunu kaydeder
   Future<bool> _oturumKaydiYap(String? sonucTipi, String? belgeAd) async {
     try {
-      // Kaydedilecek verileri hazırla
+      // Kaydedilecek veriler
       Map<String, dynamic> row = {
         'Surec_ID': widget.surecId, // İlgili Süreç ID'si
         'Soru_ID': mevcutSoruId, // eN SOn ulaşılan soru ID'si

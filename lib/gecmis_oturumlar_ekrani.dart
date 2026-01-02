@@ -11,7 +11,7 @@ class GecmisOturumlarEkrani extends StatelessWidget {
     // Veritabanında TEXT olarak kayıtlı ISO tarihini DateTime nesnesine dönüştür
     try {
       final DateTime dateTime = DateTime.parse(isoTarih);
-      // Örnek format: 20. 11. 2025 - 16:17
+
       return "${dateTime.day}. ${dateTime.month}. ${dateTime.year} - ${dateTime.hour}:${dateTime.minute}";
     } catch (e) {
       return "Geçersiz Tarih";
@@ -26,7 +26,7 @@ class GecmisOturumlarEkrani extends StatelessWidget {
         backgroundColor: Colors.teal,
       ),
       body: FutureBuilder<List<Map<String, dynamic>>>(
-        // Yeni fonksiyonumuzu çağırıyoruz
+
         future: dbService.getHistorySessions(), 
         builder: (context, snapshot) {
           
