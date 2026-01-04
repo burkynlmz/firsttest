@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import '/services/database_service.dart'; 
+import '../services/database_service.dart';
+import '../models.dart'; // Modellerimizi çağırdık
 
 class SoruEkrani extends StatefulWidget {
   final int surecId;
-  
-  // Sürecin başlangıcında bize Süreç ID'si verilecek
   const SoruEkrani({super.key, required this.surecId});
 
   @override
@@ -12,197 +11,183 @@ class SoruEkrani extends StatefulWidget {
 }
 
 class _SoruEkraniState extends State<SoruEkrani> {
-  final DatabaseService dbService = DatabaseService();
-  
-  // Hangi soruda olduğumuzu tutan ID.
-  int? mevcutSoruId; 
-  Map<String, dynamic>? mevcutSoru;
+  final DatabaseService _dbService = DatabaseService();
+
+  // --- STATE DEĞİŞKENLERİ ---
+  bool _yukleniyor = true;
+  Soru? _aktifSoru;       // Ekranda gösterilen soru nesnesi
+  String? _sonucMetni;    // Süreç bittiyse gösterilecek sonuç yazısı
 
   @override
   void initState() {
     super.initState();
-    // Ekran açıldığında başlangıç sorusunu yükle.
     _baslangicSorusunuYukle();
   }
 
-  // Süreç ID'sine göre başlangıç sorusunu bulup yükleyen ana fonksiyon
+  // 1. Sürecin ilk sorusunu bulup yükler
   Future<void> _baslangicSorusunuYukle() async {
-    // Süreç ID'si ile Baslangic_Soru_ID'yi bul
-    final surecData = await dbService.getSurecById(widget.surecId);
+    final surec = await _dbService.getSurecById(widget.surecId);
     
-    if (surecData != null && surecData['Baslangic_Soru_ID'] != null) {
-      int baslangicSoruId = surecData['Baslangic_Soru_ID'];
-      
-      // Başlangıç Soru ID'si ile soruyu çek
-      await _soruyuYukle(baslangicSoruId);
+    if (surec != null) {
+      await _soruyuGetir(surec.baslangicSoruId);
     } else {
-      // Hata durumu: Başlangıç sorusu bulunamadı
       setState(() {
-        mevcutSoru = {'Soru_Metni': 'Başlangıç bilgisi eksik.', 'Sonuc_Tipi': 'HATA'};
+        _yukleniyor = false;
+        _sonucMetni = "Hata: Süreç bulunamadı.";
       });
     }
   }
-  
-  // Verilen ID'ye göre soruyu veritabanından çeker ve state'i günceller
-  Future<void> _soruyuYukle(int soruId) async {
-    final soruData = await dbService.getQuestionById(soruId);
+
+  // 2. ID'si verilen soruyu veritabanından çeker
+  Future<void> _soruyuGetir(int soruId) async {
+    setState(() => _yukleniyor = true);
+    
+    final soru = await _dbService.getQuestionById(soruId);
+    
     setState(() {
-      mevcutSoruId = soruId;
-      mevcutSoru = soruData;
+      _aktifSoru = soru;
+      _yukleniyor = false;
     });
   }
 
-  // --- CEVAP İŞLEME MANTIĞI ---
-  Future<void> _cevapVer(bool cevap) async{
-    if (mevcutSoru == null) return;
+  // 3. Kullanıcının verdiği cevabı işler
+  Future<void> _cevapVer(bool evetSecildi) async {
+    if (_aktifSoru == null) return;
 
-       
-    // Sonraki ID'yi veritabanından dinamik olarak çek
-    final dynamic rawSonrakiId = cevap 
-      ? mevcutSoru!['Cevap_Evet_Soru_ID'] 
-      : mevcutSoru!['Cevap_Hayir_Soru_ID'];
+    // Modeller sayesinde mantık ne kadar sadeleşti:
+    // Null kontrolü ('?') sayesinde 0 veya null gelmesi fark etmez, güvenlidir.
+    final sonrakiSoruId = evetSecildi ? _aktifSoru!.evetSoruId : _aktifSoru!.hayirSoruId;
 
-    // print('Kullanıcı Cevabı: ${cevap ? "EVET" : "HAYIR"}');
-    // print('Veritabanından Gelen HAM ID: $rawSonrakiId (Türü: ${rawSonrakiId.runtimeType})');
-
-    // Çekilen değeri tam sayıya (int) çevir.
-    final int? sonrakiId = (rawSonrakiId != null) 
-          ? int.tryParse(rawSonrakiId.toString()) 
-          : null;
-
-    // print('İşlenen (int) Sonraki ID: $sonrakiId');
-    int sId = sonrakiId ?? 0;
-    debugPrint("Sonraki Soru ID'si: $sId");
-    // Karar Mantığı
-    if (sId > 0) {
-      // Bir sonraki soruya geç
-      await _soruyuYukle(sId); 
+    if (sonrakiSoruId != null) {
+      // Sonraki soruya geç
+      await _soruyuGetir(sonrakiSoruId);
     } else {
-      // SONUÇ AŞAMASI
-      debugPrint("Sonucu göster çağrılıyor ${mevcutSoru!['Sonuc_Tipi']} , ${mevcutSoru!['Ilgili_Belge_ID']}");
-      await _sonucuGoster(mevcutSoru!['Sonuc_Tipi'], mevcutSoru!['Ilgili_Belge_ID']);
+      // Süreç bitti, Sonuç Ekranına geç
+      await _sonucuIsle(_aktifSoru!.sonucTipi, _aktifSoru!.ilgiliBelgeId);
     }
   }
-  
-  Future<void> _sonucuGoster(String? sonucTipi, int? belgeId) async {
-    String sonucMetni = 'Süreç tamamlandı. Sonuç: $sonucTipi.';
-    String? belgeAd = 'Yok';
-    debugPrint("Sonucu göster girildi. Sonuç Tipi: $sonucTipi, Belge ID: $belgeId");
-    // Eğer Belge ID'si varsa, belge detaylarını çek
-    if (belgeId != null && belgeId > 0) {
-      final belgeData = await dbService.getDocumentById(belgeId);
-      if (belgeData != null) {
-        belgeAd = belgeData['Belge_Ad'];
-        // Sonuç metnine belge detaylarını ekle
-        sonucMetni += "\n\n— GEREKLİ BELGE —\nBelge Adı: ${belgeAd}\nAçıklama: ${belgeData['Belge_Aciklama'] ?? 'Belge açıklaması bulunamadı.'}";
+
+  // 4. Sonuç metnini oluşturur ve veritabanına kaydeder
+  Future<void> _sonucuIsle(String? sonucTipi, int? belgeId) async {
+    setState(() => _yukleniyor = true);
+
+    String metin = 'Süreç tamamlandı. Sonuç: $sonucTipi';
+    String? belgeAdi = 'Yok';
+
+    // Eğer belge varsa detaylarını çek
+    if (belgeId != null) {
+      final belge = await _dbService.getDocumentById(belgeId);
+      if (belge != null) {
+        belgeAdi = belge.ad;
+        metin += "\n\n📄 GEREKLİ BELGE\n------------------\n${belge.ad}\n\n📝 NOT\n${belge.not ?? 'Açıklama yok.'}";
       }
     }
-    // KULLANICI_OTURUMU tablosuna kaydı yap
-    final kayitBasarili = await _oturumKaydiYap(sonucTipi, belgeAd);
 
-    if (kayitBasarili) {
-       sonucMetni += "\n\n(Oturum başarıyla kaydedildi.)";
-    } else {
-       sonucMetni += "\n\n(UYARI: Oturum kaydedilemedi!)";
-    }
+    // Oturumu Kaydet
+    final yeniOturum = Oturum(
+      surecId: widget.surecId,
+      soruId: _aktifSoru?.id ?? 0,
+      verilenCevap: "Tip: $sonucTipi, Belge: $belgeAdi",
+      cevapTarihi: DateTime.now().toIso8601String(),
+      aktifMi: 0, // 0: Tamamlandı
+    );
 
-    // Ekranı Sonuç Mesajı ile güncelle
+    await _dbService.insertSession(yeniOturum);
+
+    // Ekrana sonucu bas
     setState(() {
-      mevcutSoru = {
-        'Soru_Metni': sonucMetni, 
-        'Sonuc_Tipi': sonucTipi
-      };
-      mevcutSoruId = null; // Butonları kaldırmak ve sonucu göstermek için
+      _aktifSoru = null; // Soruyu ekrandan kaldır
+      _sonucMetni = metin;
+      _yukleniyor = false;
     });
   }
 
-  // Kullanıcı Oturumunu kaydeder
-  Future<bool> _oturumKaydiYap(String? sonucTipi, String? belgeAd) async {
-    try {
-      // Kaydedilecek veriler
-      Map<String, dynamic> row = {
-        'Surec_ID': widget.surecId, // İlgili Süreç ID'si
-        'Soru_ID': mevcutSoruId, // eN SOn ulaşılan soru ID'si
-        'Verilen_Cevap': "Tip: $sonucTipi, Belge: ${belgeAd ?? 'Yok'}", //cevap metni ve sonuç bilgisi kaydeder
-        'Cevap_Tarihi': DateTime.now().toIso8601String(), // cevap tarihi kaydet
-        'Aktif_Mi': 0 // Süreç tamamlandı
-      };
-      
-      await dbService.insertSession(row); // DatabaseService'deki fonksiyon çağrılıyor
-      return true;
-    } catch (e) {
-      print("Oturum kaydı hatası: $e");
-      return false;
-    }
-  }
-
-  // --- WIDGET YAPISI ---
   @override
   Widget build(BuildContext context) {
-    if (mevcutSoru == null) {
-      return  Scaffold(
-        appBar: AppBar(title: Text('Soru Yükleniyor...')),
-        body: Center(child: CircularProgressIndicator()),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Karar Verme Süreci'),
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: _buildBody(),
+      ),
+    );
+  }
+
+  // UI kodunu parçalara ayırdık, okuması daha kolay
+  Widget _buildBody() {
+    if (_yukleniyor) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    // Durum 1: Sonuç gösteriliyor
+    if (_sonucMetni != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle_outline, size: 80, color: Colors.green),
+            const SizedBox(height: 20),
+            Text(
+              _sonucMetni!,
+              style: const TextStyle(fontSize: 18, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+              ),
+              child: const Text('ANA EKRANA DÖN'),
+            )
+          ],
+        ),
       );
     }
 
-    // Sorunun metni veya sonuç mesajı
-    final String metin = mevcutSoru!['Soru_Metni'] ?? 'Soru metni bulunamadı.';
-    
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Karar Verme'),
-        backgroundColor: Colors.indigo,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Soru Metni
-            Text(
-              mevcutSoruId != null ? "Soru #${mevcutSoruId!}:" : "Sonuç:",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w300, color: Colors.indigo[800]),
+    // Durum 2: Soru gösteriliyor
+    if (_aktifSoru != null) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            "Soru #${_aktifSoru!.id}",
+            style: TextStyle(color: Colors.grey[600], fontSize: 16),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 15),
+          Text(
+            _aktifSoru!.metin,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 50),
+          ElevatedButton(
+            onPressed: () => _cevapVer(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              padding: const EdgeInsets.symmetric(vertical: 18),
             ),
-            const SizedBox(height: 10),
-            Text(
-              metin,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
+            child: const Text('EVET', style: TextStyle(fontSize: 18, color: Colors.white)),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => _cevapVer(false),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              padding: const EdgeInsets.symmetric(vertical: 18),
             ),
-            const SizedBox(height: 50),
-            
-            // Cevap butonları sadece soru varsa görünür
-            if (mevcutSoruId != null) 
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ElevatedButton(
-                    onPressed: () => _cevapVer(true), // Evet cevabı
-                    child: const Text('EVET', style: TextStyle(fontSize: 18)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green, padding: const EdgeInsets.symmetric(vertical: 15)),
-                  ),
-                  const SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () => _cevapVer(false), // Hayır cevabı
-                    child: const Text('HAYIR', style: TextStyle(fontSize: 18)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red, padding: const EdgeInsets.symmetric(vertical: 15)),
-                  ),
-                ],
-              ),
-              
-            if (mevcutSoruId == null)
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context), // Ana listeye dön
-                child: const Text('ANA EKRANA DÖN', style: TextStyle(fontSize: 18)),
-                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15)),
-              ),
-          ],
-        ),
-      ),
-    );
+            child: const Text('HAYIR', style: TextStyle(fontSize: 18, color: Colors.white)),
+          ),
+        ],
+      );
+    }
+
+    return const Center(child: Text("Beklenmedik bir hata oluştu."));
   }
 }

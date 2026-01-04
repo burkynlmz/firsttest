@@ -2,6 +2,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
+import '../models.dart'; // Model dosyamızı import ediyoruz (yoluna dikkat et)
 
 class DatabaseService {
 
@@ -13,117 +14,93 @@ class DatabaseService {
 
   Future<Database> get database async {
     if (_database != null) return _database!;
-
     _database = await _initDatabase();
     return _database!;
   }
 
   Future<Database> _initDatabase() async {
-
-    // Veritabanı klasör yolunu al.
     var databasesPath = await getDatabasesPath();
     var path = join(databasesPath, "burokrasi_yoneticisi.db");
     
-    // Dosyanın cihazda varlığını kontrol et.
+    // Veritabanı var mı kontrol et
     var exists = await databaseExists(path);
 
     if (!exists) {
-      //Eğer dosya yoksa (Uygulamanın ilk çalışması):
-      
-      print("Veritabanı (${basename(path)}) bulunamadı, assets'ten kopyalanıyor...");
-
+      print("Veritabanı bulunamadı, assets'ten kopyalanıyor...");
       try {
-        // Asset'teki dosyayı ByteData olarak yükle.
         ByteData data = await rootBundle.load(join("assets", "burokrasi_yoneticisi.db"));
         List<int> bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-
-        // Veritabanı klasörü yoksa oluştur.
+        
         await Directory(dirname(path)).create(recursive: true);
-
-        // Dosyayı hedef klasöre kopyala ve yaz.
         await File(path).writeAsBytes(bytes, flush: true);
-        
-        print("Veritabanı kopyalama tamamlandı.");
-        
+        print("Kopyalama başarılı.");
       } catch (e) {
         print("Veritabanı kopyalama hatası: $e");
       }
-    } else {
-      print("Veritabanı zaten mevcut. Kopyalama atlandı.");
     }
-
-    // Veritabanını aç.
-    _database = await openDatabase(
-      path,
-      version: 1, // Dosyayı ilk kopyalamada versiyon 1 olarak açar.
-      onCreate: (db, version) {
-
-        db.execute(
-          "CREATE TABLE KULLANICI_OTURUMU("
-          "id INTEGER PRIMARY KEY,"
-          "Surec_ID INTEGER,"
-          "Soru_ID INTEGER,"
-          "Verilen_Cevap TEXT,"
-          "Cevap_Tarihi TEXT,"
-          "Aktif_Mi INTEGER)",
-        );
-        print("KULLANICI_OTURUMU tablosu güncel şema ile oluşturuldu.");
-      },
-    );
-    return _database!;
-
+    
+    return await openDatabase(path, version: 1);
   }
 
-  // KULLANICI_OTURUMU tablosuna yeni bir sonuç kaydı ekler
-  Future<int> insertSession(Map<String, dynamic> row) async {
+  // --- ARTIK NESNE (OBJECT) DÖNDÜREN FONKSİYONLAR ---
+
+  // Tüm süreçleri liste olarak getirir (Surec Listesi)
+  Future<List<Surec>> getAllSurec() async {
     Database db = await database;
-    return await db.insert('KULLANICI_OTURUMU', row);
+    final List<Map<String, dynamic>> maps = await db.query('SUREC');
+    
+    // Gelen her bir Map'i Surec nesnesine çeviriyoruz
+    return List.generate(maps.length, (i) => Surec.fromMap(maps[i]));
   }
 
-  // KULLANICI_OTURUMU tablosundaki tüm kayıtları getirir
-  Future<List<Map<String, dynamic>>> getHistorySessions() async {
-    Database db = await database;
-    return await db.query('KULLANICI_OTURUMU', orderBy: 'Cevap_Tarihi DESC');
-  }
-
-  // Tüm süreçlerin (SUREC_ID ve Baslik) listesini getirir.
-  Future<List<Map<String, dynamic>>> getAllSurec() async {
-    Database db = await database;
-    return await db.query('SUREC', columns: ['Surec_ID', 'Baslik']);
-  }
-
-  // Belirli bir sürecin detaylarını (özellikle Başlangıç_Soru_ID'yi) getirir.
-  Future<Map<String, dynamic>?> getSurecById(int surecId) async {
-    Database db = await database;
-    List<Map<String, dynamic>> result = await db.query(
-      'SUREC',
-      where: 'Surec_ID = ?',
-      whereArgs: [surecId],
-    );
-    return result.isNotEmpty ? result.first : null;
-  }
-
-  // Belirli bir Soru_ID'ye ait metinleri ve sonraki adım bilgilerini getirir.
-  Future<Map<String, dynamic>?> getQuestionById(int soruId) async {
+  // ID'ye göre tek bir Soru getirir
+  Future<Soru?> getQuestionById(int soruId) async {
     Database db = await database;
     List<Map<String, dynamic>> result = await db.query(
       'SORULAR',
       where: 'Soru_ID = ?',
       whereArgs: [soruId],
     );
-    return result.isNotEmpty ? result.first : null;
+    
+    if (result.isNotEmpty) {
+      return Soru.fromMap(result.first);
+    }
+    return null;
   }
 
-  // Belirli bir Belge_ID'ye ait tüm detayları (Ad, Açıklama, Gerekli Yer) getirir.
-  Future<Map<String, dynamic>?> getDocumentById(int belgeId) async {
+  // Başlangıç sorusunu bulmak için Süreç detayını getirir
+  Future<Surec?> getSurecById(int surecId) async {
+    Database db = await database;
+    List<Map<String, dynamic>> result = await db.query(
+      'SUREC',
+      where: 'Surec_ID = ?',
+      whereArgs: [surecId],
+    );
+    return result.isNotEmpty ? Surec.fromMap(result.first) : null;
+  }
+
+  // ID'ye göre Belge getirir
+  Future<Belge?> getDocumentById(int belgeId) async {
     Database db = await database;
     List<Map<String, dynamic>> result = await db.query(
       'BELGELER',
       where: 'Belge_ID = ?',
       whereArgs: [belgeId],
     );
-    return result.isNotEmpty ? result.first : null;
+    return result.isNotEmpty ? Belge.fromMap(result.first) : null;
   }
 
-  
+  // Yeni bir oturum kaydeder
+  // Artık parametre olarak Map değil, Oturum nesnesi alıyoruz. Hata yapma şansımız kalmıyor.
+  Future<int> insertSession(Oturum oturum) async {
+    Database db = await database;
+    return await db.insert('KULLANICI_OTURUMU', oturum.toMap());
+  }
+
+  // Geçmiş oturumları getirir
+  Future<List<Oturum>> getHistorySessions() async {
+    Database db = await database;
+    final List<Map<String, dynamic>> maps = await db.query('KULLANICI_OTURUMU', orderBy: 'Cevap_Tarihi DESC');
+    return List.generate(maps.length, (i) => Oturum.fromMap(maps[i]));
+  }
 }

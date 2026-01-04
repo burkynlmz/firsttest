@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
-import 'services/database_service.dart'; 
+import 'services/database_service.dart';
+import 'models.dart';
 
 class GecmisOturumlarEkrani extends StatelessWidget {
   final DatabaseService dbService = DatabaseService();
 
   GecmisOturumlarEkrani({super.key});
 
-  // Tarih formatını daha okunaklı hale getiren yardımcı fonksiyon
   String formatTarih(String isoTarih) {
-    // Veritabanında TEXT olarak kayıtlı ISO tarihini DateTime nesnesine dönüştür
     try {
       final DateTime dateTime = DateTime.parse(isoTarih);
-
-      return "${dateTime.day}. ${dateTime.month}. ${dateTime.year} - ${dateTime.hour}:${dateTime.minute}";
+      // Basit bir formatlama: 16.12.2025 - 14:30
+      return "${dateTime.day}.${dateTime.month}.${dateTime.year} - ${dateTime.hour.toString().padLeft(2,'0')}:${dateTime.minute.toString().padLeft(2,'0')}";
     } catch (e) {
-      return "Geçersiz Tarih";
+      return "Tarih Hatası";
     }
   }
 
@@ -22,11 +21,12 @@ class GecmisOturumlarEkrani extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tamamlanan Süreçler'),
+        title: const Text('Geçmiş İşlemler'),
         backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-
+      // FutureBuilder List<Oturum> bekliyor
+      body: FutureBuilder<List<Oturum>>(
         future: dbService.getHistorySessions(), 
         builder: (context, snapshot) {
           
@@ -35,13 +35,13 @@ class GecmisOturumlarEkrani extends StatelessWidget {
           }
           
           if (snapshot.hasError) {
-            return Center(child: Text('Veri yüklenirken hata oluştu: ${snapshot.error}'));
+            return Center(child: Text('Veri yüklenirken hata oluştu.'));
           }
 
-          final List<Map<String, dynamic>> oturumlar = snapshot.data ?? [];
+          final oturumlar = snapshot.data ?? [];
           
           if (oturumlar.isEmpty) {
-            return const Center(child: Text('Tamamlanmış süreç kaydı bulunmamaktadır.'));
+            return const Center(child: Text('Henüz tamamlanmış bir işlem yok.'));
           }
           
           return ListView.builder(
@@ -52,11 +52,16 @@ class GecmisOturumlarEkrani extends StatelessWidget {
                 elevation: 3,
                 margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
                 child: ListTile(
-                  // 'Verilen_Cevap' sütununu gösteriyoruz
-                  title: Text(oturum['Verilen_Cevap'] ?? 'Sonuç Bilgisi Yok', style: const TextStyle(fontWeight: FontWeight.bold)), 
-                  // 'Cevap_Tarihi' sütununu formatlayıp gösteriyoruz
-                  subtitle: Text('Tarih: ${formatTarih(oturum['Cevap_Tarihi'] ?? '')}'), 
-                  trailing: Text('Süreç ID: ${oturum['Surec_ID']}'),
+                  leading: const Icon(Icons.check_circle, color: Colors.teal),
+                  // Nesne tabanlı erişim:
+                  title: Text(
+                    oturum.verilenCevap, 
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ), 
+                  subtitle: Text('Tarih: ${formatTarih(oturum.cevapTarihi)}'), 
+                  trailing: Text('ID: ${oturum.surecId}'),
                 ),
               );
             },
