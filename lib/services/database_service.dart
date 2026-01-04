@@ -39,7 +39,27 @@ class DatabaseService {
       }
     }
     
-    return await openDatabase(path, version: 1);
+    return await openDatabase(path, 
+      version: 2, // Versiyonu artırdık ki onUpgrade çalışsın
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          print("Veritabanı güncelleniyor: Tabloya Arama_Terimi ekleniyor...");
+          
+          // 1. Yeni sütunu ekle
+          await db.execute("ALTER TABLE SUREC ADD COLUMN Arama_Terimi TEXT");
+          
+          // 2. Mevcut süreçlere arama terimlerini ata (Örnek veriler)
+          // ID 1: Basit Tadilat -> Belediye İmar
+          await db.execute("UPDATE SUREC SET Arama_Terimi = 'Belediye İmar İşleri' WHERE Surec_ID = 1");
+          // ID 2: Öğrenci Belgesi -> İlçe Milli Eğitim
+          await db.execute("UPDATE SUREC SET Arama_Terimi = 'İlçe Milli Eğitim Müdürlüğü' WHERE Surec_ID = 2");
+           // ID 3: Teknik İzin -> Belediye
+          await db.execute("UPDATE SUREC SET Arama_Terimi = 'Belediye Fen İşleri' WHERE Surec_ID = 3");
+          
+          print("Veritabanı güncellemesi tamamlandı.");
+        }
+      },
+    );
   }
 
   // --- ARTIK NESNE (OBJECT) DÖNDÜREN FONKSİYONLAR ---
@@ -103,4 +123,7 @@ class DatabaseService {
     final List<Map<String, dynamic>> maps = await db.query('KULLANICI_OTURUMU', orderBy: 'Cevap_Tarihi DESC');
     return List.generate(maps.length, (i) => Oturum.fromMap(maps[i]));
   }
+
+
+      
 }

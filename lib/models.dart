@@ -3,11 +3,13 @@ class Surec {
   final int id;
   final String baslik;
   final int baslangicSoruId;
+  final String? aramaTerimi; // YENİ ALAN: Haritada aranacak kelime
 
   Surec({
     required this.id, 
     required this.baslik, 
-    required this.baslangicSoruId
+    required this.baslangicSoruId,
+    this.aramaTerimi,
   });
 
   // Veritabanından gelen Map verisini (Veritabanı dili) Sınıfa (Dart dili) çevirir
@@ -16,6 +18,7 @@ class Surec {
       id: map['Surec_ID'],
       baslik: map['Baslik'],
       baslangicSoruId: map['Baslangic_Soru_ID'],
+      aramaTerimi: map['Arama_Terimi'],
     );
   }
 }

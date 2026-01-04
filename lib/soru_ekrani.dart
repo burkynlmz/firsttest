@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/database_service.dart';
 import '../models.dart'; // Modellerimizi çağırdık
+import 'package:url_launcher/url_launcher.dart';
 
 class SoruEkrani extends StatefulWidget {
   final int surecId;
@@ -17,6 +18,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
   bool _yukleniyor = true;
   Soru? _aktifSoru;       // Ekranda gösterilen soru nesnesi
   String? _sonucMetni;    // Süreç bittiyse gösterilecek sonuç yazısı
+  Surec? _aktifSurec;     // Süreç bilgisi (arama terimi için)
 
   @override
   void initState() {
@@ -29,6 +31,9 @@ class _SoruEkraniState extends State<SoruEkrani> {
     final surec = await _dbService.getSurecById(widget.surecId);
     
     if (surec != null) {
+      setState(() {
+        _aktifSurec = surec; // Süreci kaydettik ki arama terimine ulaşabilelim
+      });
       await _soruyuGetir(surec.baslangicSoruId);
     } else {
       setState(() {
@@ -82,6 +87,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
         metin += "\n\n📄 GEREKLİ BELGE\n------------------\n${belge.ad}\n\n📝 NOT\n${belge.not ?? 'Açıklama yok.'}";
       }
     }
+    
 
     // Oturumu Kaydet
     final yeniOturum = Oturum(
@@ -100,6 +106,24 @@ class _SoruEkraniState extends State<SoruEkrani> {
       _sonucMetni = metin;
       _yukleniyor = false;
     });
+  }
+
+  // Haritayı açan fonksiyon
+  Future<void> _haritayiAc(String aramaTerimi) async {
+    // Google Maps arama linki oluşturuyoruz
+    final String googleMapsUrl = "https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(aramaTerimi)}";
+    final Uri url = Uri.parse(googleMapsUrl);
+    
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw Exception('Link açılamadı: $url');
+      }
+    } catch (e) {
+      debugPrint("Harita açma hatası: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Harita uygulaması açılamadı.")),
+      );
+    }
   }
 
   @override
@@ -137,6 +161,21 @@ class _SoruEkraniState extends State<SoruEkrani> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 40),
+
+            // Eğer arama terimi varsa butonu göster
+            if (_aktifSurec?.aramaTerimi != null)
+              ElevatedButton.icon(
+                onPressed: () => _haritayiAc(_aktifSurec!.aramaTerimi!),
+                icon: const Icon(Icons.map),
+                label: const Text('EN YAKIN KURUMU BUL'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blueAccent,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+              ),
+            const SizedBox(height: 20),
+
             ElevatedButton(
               onPressed: () => Navigator.pop(context),
               style: ElevatedButton.styleFrom(
