@@ -37,6 +37,8 @@ dependencies:
   sqflite: ^2.3.0 
   path: ^1.8.3     
   url_launcher: ^6.2.1
+  pdf: ^3.10.8
+  printing: ^5.11.1
 
 dev_dependencies:
   flutter_test:
@@ -48,6 +50,8 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -91,3 +95,18 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon.png"
+  min_sdk_android: 21
+
+flutter_native_splash:
+  color: "#ffffff"               # Arka plan rengi (Beyaz)
+  image: "assets/icon.png"       # Ortada duracak logo
+  branding: "assets/icon.png"    # (Opsiyonel) Marka logosu
+  color_dark: "#121212"          # (Opsiyonel) Telefon karanlık moddaysa arka plan
+  android_12:
+    image: "assets/icon.png"
+    color: "#ffffff"

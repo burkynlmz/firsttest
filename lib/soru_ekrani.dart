@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../services/database_service.dart';
-import '../models.dart'; // Modellerimizi çağırdık
 import 'package:url_launcher/url_launcher.dart';
+import '../services/database_service.dart';
+import '../services/pdf_service.dart';
+import '../models.dart';
 
 class SoruEkrani extends StatefulWidget {
   final int surecId;
@@ -13,12 +14,18 @@ class SoruEkrani extends StatefulWidget {
 
 class _SoruEkraniState extends State<SoruEkrani> {
   final DatabaseService _dbService = DatabaseService();
+  final PdfService _pdfService = PdfService();
 
   // --- STATE DEĞİŞKENLERİ ---
   bool _yukleniyor = true;
-  Soru? _aktifSoru;       // Ekranda gösterilen soru nesnesi
-  String? _sonucMetni;    // Süreç bittiyse gösterilecek sonuç yazısı
-  Surec? _aktifSurec;     // Süreç bilgisi (arama terimi için)
+  Soru? _aktifSoru;
+  String? _sonucMetni;
+  Surec? _aktifSurec;
+
+  // PDF için veriler
+  String? _pdfSonucTipi;
+  String? _pdfBelgeAdi;
+  String? _pdfBelgeNotu;
 
   @override
   void initState() {
@@ -26,13 +33,12 @@ class _SoruEkraniState extends State<SoruEkrani> {
     _baslangicSorusunuYukle();
   }
 
-  // 1. Sürecin ilk sorusunu bulup yükler
   Future<void> _baslangicSorusunuYukle() async {
     final surec = await _dbService.getSurecById(widget.surecId);
     
     if (surec != null) {
       setState(() {
-        _aktifSurec = surec; // Süreci kaydettik ki arama terimine ulaşabilelim
+        _aktifSurec = surec;
       });
       await _soruyuGetir(surec.baslangicSoruId);
     } else {
@@ -43,83 +49,79 @@ class _SoruEkraniState extends State<SoruEkrani> {
     }
   }
 
-  // 2. ID'si verilen soruyu veritabanından çeker
   Future<void> _soruyuGetir(int soruId) async {
     setState(() => _yukleniyor = true);
-    
     final soru = await _dbService.getQuestionById(soruId);
-    
     setState(() {
       _aktifSoru = soru;
       _yukleniyor = false;
     });
   }
 
-  // 3. Kullanıcının verdiği cevabı işler
+  // --- DÜZELTME 1: Mantık Hatası Giderildi ---
   Future<void> _cevapVer(bool evetSecildi) async {
     if (_aktifSoru == null) return;
 
-    // Modeller sayesinde mantık ne kadar sadeleşti:
-    // Null kontrolü ('?') sayesinde 0 veya null gelmesi fark etmez, güvenlidir.
     final sonrakiSoruId = evetSecildi ? _aktifSoru!.evetSoruId : _aktifSoru!.hayirSoruId;
 
     if (sonrakiSoruId != null) {
       // Sonraki soruya geç
       await _soruyuGetir(sonrakiSoruId);
     } else {
-      // Süreç bitti, Sonuç Ekranına geç
-      await _sonucuIsle(_aktifSoru!.sonucTipi, _aktifSoru!.ilgiliBelgeId);
+      // SÜREÇ BİTTİ
+      // Eğer EVET seçildiyse ve süreç bittiyse bu bir Başarıdır (ONAY).
+      // Eğer HAYIR seçildiyse veritabanındaki sonucu (Muhtemelen RED) kullanırız.
+      String nihaiSonuc = evetSecildi ? "ONAY" : (_aktifSoru!.sonucTipi ?? "BİLİNMİYOR");
+      
+      await _sonucuIsle(nihaiSonuc, _aktifSoru!.ilgiliBelgeId);
     }
   }
 
-  // 4. Sonuç metnini oluşturur ve veritabanına kaydeder
-  Future<void> _sonucuIsle(String? sonucTipi, int? belgeId) async {
+  Future<void> _sonucuIsle(String sonucTipi, int? belgeId) async {
     setState(() => _yukleniyor = true);
 
     String metin = 'Süreç tamamlandı. Sonuç: $sonucTipi';
     String? belgeAdi = 'Yok';
+    String? belgeNotu;
 
-    // Eğer belge varsa detaylarını çek
     if (belgeId != null) {
       final belge = await _dbService.getDocumentById(belgeId);
       if (belge != null) {
         belgeAdi = belge.ad;
+        belgeNotu = belge.not;
         metin += "\n\n📄 GEREKLİ BELGE\n------------------\n${belge.ad}\n\n📝 NOT\n${belge.not ?? 'Açıklama yok.'}";
       }
     }
-    
 
-    // Oturumu Kaydet
     final yeniOturum = Oturum(
       surecId: widget.surecId,
       soruId: _aktifSoru?.id ?? 0,
       verilenCevap: "Tip: $sonucTipi, Belge: $belgeAdi",
       cevapTarihi: DateTime.now().toIso8601String(),
-      aktifMi: 0, // 0: Tamamlandı
+      aktifMi: 0,
     );
 
     await _dbService.insertSession(yeniOturum);
 
-    // Ekrana sonucu bas
     setState(() {
-      _aktifSoru = null; // Soruyu ekrandan kaldır
+      _aktifSoru = null;
       _sonucMetni = metin;
+      _pdfSonucTipi = sonucTipi; // Düzeltilmiş sonucu PDF'e gönderiyoruz
+      _pdfBelgeAdi = belgeAdi;
+      _pdfBelgeNotu = belgeNotu;
       _yukleniyor = false;
     });
   }
 
-  // Haritayı açan fonksiyon
   Future<void> _haritayiAc(String aramaTerimi) async {
-    // Google Maps arama linki oluşturuyoruz
     final String googleMapsUrl = "https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(aramaTerimi)}";
     final Uri url = Uri.parse(googleMapsUrl);
-    
     try {
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
         throw Exception('Link açılamadı: $url');
       }
     } catch (e) {
-      debugPrint("Harita açma hatası: $e");
+      debugPrint("Harita hatası: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Harita uygulaması açılamadı.")),
       );
@@ -141,54 +143,84 @@ class _SoruEkraniState extends State<SoruEkrani> {
     );
   }
 
-  // UI kodunu parçalara ayırdık, okuması daha kolay
   Widget _buildBody() {
     if (_yukleniyor) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Durum 1: Sonuç gösteriliyor
+    // DURUM 1: SONUÇ GÖSTERİLİYOR
     if (_sonucMetni != null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.check_circle_outline, size: 80, color: Colors.green),
-            const SizedBox(height: 20),
-            Text(
-              _sonucMetni!,
-              style: const TextStyle(fontSize: 18, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 40),
+      
+      // --- DÜZELTME 2: İkon ve Renk Mantığı ---
+      bool basariliMi = _pdfSonucTipi == "ONAY";
+      Color sonucRengi = basariliMi ? Colors.green : Colors.red;
+      IconData sonucIkonu = basariliMi ? Icons.check_circle_outline : Icons.cancel_outlined;
 
-            // Eğer arama terimi varsa butonu göster
-            if (_aktifSurec?.aramaTerimi != null)
+      return Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(sonucIkonu, size: 80, color: sonucRengi),
+              const SizedBox(height: 20),
+              Text(
+                _sonucMetni!,
+                style: const TextStyle(fontSize: 18, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 30),
+
+              // PDF Butonu
               ElevatedButton.icon(
-                onPressed: () => _haritayiAc(_aktifSurec!.aramaTerimi!),
-                icon: const Icon(Icons.map),
-                label: const Text('EN YAKIN KURUMU BUL'),
+                onPressed: () {
+                  _pdfService.raporOlustur(
+                    sonucTipi: _pdfSonucTipi!,
+                    belgeAdi: _pdfBelgeAdi,
+                    belgeNotu: _pdfBelgeNotu,
+                  );
+                },
+                icon: const Icon(Icons.picture_as_pdf),
+                label: const Text('SONUCU PDF OLARAK İNDİR'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
+                  backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  minimumSize: const Size(250, 45),
                 ),
               ),
-            const SizedBox(height: 20),
+              
+              const SizedBox(height: 15),
 
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-              ),
-              child: const Text('ANA EKRANA DÖN'),
-            )
-          ],
+              // Harita Butonu
+              if (_aktifSurec?.aramaTerimi != null)
+                ElevatedButton.icon(
+                  onPressed: () => _haritayiAc(_aktifSurec!.aramaTerimi!),
+                  icon: const Icon(Icons.map),
+                  label: const Text('EN YAKIN KURUMU BUL'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueAccent,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    minimumSize: const Size(250, 45),
+                  ),
+                ),
+
+              const SizedBox(height: 30),
+
+              OutlinedButton(
+                onPressed: () => Navigator.pop(context),
+                style: OutlinedButton.styleFrom(
+                   padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+                ),
+                child: const Text('ANA EKRANA DÖN'),
+              )
+            ],
+          ),
         ),
       );
     }
 
-    // Durum 2: Soru gösteriliyor
+    // DURUM 2: SORU GÖSTERİLİYOR
     if (_aktifSoru != null) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
