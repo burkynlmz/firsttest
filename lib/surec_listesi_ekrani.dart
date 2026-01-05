@@ -14,10 +14,9 @@ class SurecListesiEkrani extends StatefulWidget {
 class _SurecListesiEkraniState extends State<SurecListesiEkrani> {
   final DatabaseService dbService = DatabaseService();
   
-  // --- STATE DEĞİŞKENLERİ ---
-  List<Surec> _tumSurecler = [];        // Veritabanından gelen tüm liste
-  List<Surec> _filtrelenmisSurecler = []; // Ekranda gösterilen (aranan) liste
-  bool _yukleniyor = true;              // Veri yükleniyor mu?
+  List<Surec> _tumSurecler = [];
+  List<Surec> _filtrelenmisSurecler = [];
+  bool _yukleniyor = true;
   final TextEditingController _aramaController = TextEditingController();
 
   @override
@@ -26,24 +25,45 @@ class _SurecListesiEkraniState extends State<SurecListesiEkrani> {
     _verileriYukle();
   }
 
-  // Veritabanından verileri çekip hafızaya alıyoruz
+  // Verileri çek ve FAVORİLERE GÖRE SIRALA
   Future<void> _verileriYukle() async {
-    final surecler = await dbService.getAllSurec();
+    List<Surec> surecler = await dbService.getAllSurec();
+    
+    // YENİ: Sıralama Mantığı
+    // a ve b iki süreçtir. Eğer a favori ise (true), listenin başına (-1) geçer.
+    surecler.sort((a, b) {
+      if (a.favoriMi == b.favoriMi) {
+        return a.id.compareTo(b.id); // İkisi de aynıysa ID'ye göre sırala
+      }
+      return a.favoriMi ? -1 : 1; 
+    });
+
     setState(() {
       _tumSurecler = surecler;
-      _filtrelenmisSurecler = surecler; // Başlangıçta hepsi görünür
+      // Eğer arama kutusu doluysa, o kelimeye göre tekrar filtrele, değilse hepsini göster
+      if (_aramaController.text.isNotEmpty) {
+        _aramaYap(_aramaController.text);
+      } else {
+        _filtrelenmisSurecler = surecler;
+      }
       _yukleniyor = false;
     });
   }
 
-  // Arama kutusuna her harf yazıldığında çalışır
+  // YENİ FONKSİYON: Favori Durumunu Değiştir
+  Future<void> _favoriDegistir(Surec surec) async {
+    // 1. Veritabanını güncelle
+    await dbService.toggleSurecFavori(surec.id, !surec.favoriMi);
+    
+    // 2. Listeyi yenile (Bu sayede sıralama güncellenir ve kalp rengi değişir)
+    await _verileriYukle();
+  }
+
   void _aramaYap(String arananKelime) {
     setState(() {
       if (arananKelime.isEmpty) {
-        // Arama kutusu boşsa hepsini göster
         _filtrelenmisSurecler = _tumSurecler;
       } else {
-        // Arama kutusu doluysa filtrele
         _filtrelenmisSurecler = _tumSurecler.where((surec) {
           final surecAdi = surec.baslik.toLowerCase();
           final aranan = arananKelime.toLowerCase();
@@ -57,23 +77,23 @@ class _SurecListesiEkraniState extends State<SurecListesiEkrani> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // Başlık yerine Arama Kutusu koyuyoruz
         title: TextField(
           controller: _aramaController,
-          onChanged: _aramaYap, // Yazı değiştikçe filtrele
+          onChanged: _aramaYap, 
           style: const TextStyle(color: Colors.white),
           cursorColor: Colors.white,
           decoration: InputDecoration(
-            hintText: 'Süreç Ara... (Örn: Tadilat İzni)',
-            hintStyle: TextStyle(color: Colors.white70),
+            hintText: 'Süreç Ara... (Örn: Pasaport)',
+            hintStyle: const TextStyle(color: Colors.white70),
             border: InputBorder.none,
-            icon: Icon(Icons.search, color: Colors.white),
+            icon: const Icon(Icons.search, color: Colors.white),
             suffixIcon: _aramaController.text.isNotEmpty 
                 ? IconButton(
                     icon: const Icon(Icons.clear, color: Colors.white),
                     onPressed: () {
                       _aramaController.clear();
-                      _aramaYap(''); // Listeyi sıfırla
+                      _aramaYap('');
+                      // Klavye kapansın istersen: FocusScope.of(context).unfocus();
                     },
                   )
                 : null,
@@ -105,25 +125,11 @@ class _SurecListesiEkraniState extends State<SurecListesiEkrani> {
     }
 
     if (_filtrelenmisSurecler.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.search_off, size: 60, color: Colors.grey),
-            const SizedBox(height: 10),
-            Text(
-              _tumSurecler.isEmpty 
-                  ? 'Kayıtlı süreç bulunamadı.' 
-                  : 'Aradığınız kriterde süreç bulunamadı.',
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+      return const Center(child: Text("Süreç bulunamadı."));
     }
 
     return ListView.builder(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag, // YENİ: Kaydırınca klavyeyi kapat
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       itemCount: _filtrelenmisSurecler.length,
       itemBuilder: (context, index) {
         final surec = _filtrelenmisSurecler[index];
@@ -131,9 +137,20 @@ class _SurecListesiEkraniState extends State<SurecListesiEkrani> {
           elevation: 2,
           margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           child: ListTile(
+            // Sol taraftaki ikon
             leading: const Icon(Icons.assignment, color: Colors.blueGrey),
+            
             title: Text(surec.baslik, style: const TextStyle(fontWeight: FontWeight.bold)),
-            trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+            
+            // YENİ: Sağ tarafa Kalp Butonu ekledik
+            trailing: IconButton(
+              icon: Icon(
+                surec.favoriMi ? Icons.favorite : Icons.favorite_border,
+                color: surec.favoriMi ? Colors.red : Colors.grey,
+              ),
+              onPressed: () => _favoriDegistir(surec),
+            ),
+            
             onTap: () {
               Navigator.push(
                 context,

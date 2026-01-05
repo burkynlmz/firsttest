@@ -40,7 +40,7 @@ class DatabaseService {
     }
     
     return await openDatabase(path, 
-      version: 2, // Versiyonu artırdık ki onUpgrade çalışsın
+      version: 5, // Versiyonu artırdık ki onUpgrade çalışsın
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           print("Veritabanı güncelleniyor: Tabloya Arama_Terimi ekleniyor...");
@@ -58,7 +58,97 @@ class DatabaseService {
           
           print("Veritabanı güncellemesi tamamlandı.");
         }
+
+        // YENİ GÜNCELLEME (Versiyon 3 - Favoriler)
+        if (oldVersion < 3) {
+          print("Veritabanı v3'e yükseltiliyor: Favori_Mi sütunu ekleniyor...");
+          // Tabloya Favori_Mi sütunu ekle (Varsayılan 0 yani False)
+          await db.execute("ALTER TABLE SUREC ADD COLUMN Favori_Mi INTEGER DEFAULT 0");
+        }
+
+        // YENİ GÜNCELLEME (Versiyon 4 - Checklist)
+        if (oldVersion < 4) {
+          print("Veritabanı v4'e yükseltiliyor: Toplanan Belgeler tablosu ekleniyor...");
+          // Bu tablo, hangi süreçte hangi belgenin tiklendiğini tutar
+          await db.execute("""
+            CREATE TABLE TOPLANAN_BELGELER (
+              Surec_ID INTEGER, 
+              Belge_ID INTEGER,
+              PRIMARY KEY (Surec_ID, Belge_ID)
+            )
+          """);
+        }
+
+        // YENİ GÜNCELLEME (Versiyon 5 - Belge Konumları)
+        if (oldVersion < 5) {
+          print("Veritabanı v5'e yükseltiliyor: Belgeler tablosuna Arama_Terimi ekleniyor...");
+          
+          // 1. Sütunu Ekle
+          await db.execute("ALTER TABLE BELGELER ADD COLUMN Arama_Terimi TEXT");
+          
+          // 2. Mevcut belgelere otomatik konum ata (Örnek veriler)
+          
+          // Tapu kelimesi geçen belgeler -> Tapu Müdürlüğü
+          await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Tapu Müdürlüğü' WHERE Belge_Adi LIKE '%Tapu%'");
+          
+          // Noter kelimesi geçen belgeler -> Noter
+          await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Noter' WHERE Belge_Adi LIKE '%Noter%'");
+          
+          // Başvuru Formu gibi şeyler -> Kırtasiye (veya Belediye, senaryoya göre)
+          await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Kırtasiye' WHERE Belge_Adi LIKE '%Formu%'");
+          
+          // Mühendis Raporu -> Yapı Denetim
+          await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Yapı Denetim Firması' WHERE Belge_Adi LIKE '%Mühendis%'");
+          
+          // Öğrenci Belgesi -> Okul veya E-Devlet (Haritada Okul aratabiliriz)
+          await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Milli Eğitim Müdürlüğü' WHERE Belge_Adi LIKE '%Öğrenci%'");
+        }
+
       },
+    );
+  }
+
+  // --- YENİ FONKSİYONLAR: Checklist Yönetimi ---
+
+  // 1. Belge daha önce tiklenmiş mi kontrol et
+  Future<bool> getBelgeDurumu(int surecId, int belgeId) async {
+    Database db = await database;
+    final result = await db.query(
+      'TOPLANAN_BELGELER',
+      where: 'Surec_ID = ? AND Belge_ID = ?',
+      whereArgs: [surecId, belgeId],
+    );
+    return result.isNotEmpty; // Eğer kayıt varsa tiklenmiştir (True)
+  }
+
+  // 2. Belgeye tik at veya tiki kaldır
+  Future<void> toggleBelgeDurumu(int surecId, int belgeId, bool yeniDurum) async {
+    Database db = await database;
+    if (yeniDurum) {
+      // Tik atıldıysa tabloya ekle
+      await db.insert(
+        'TOPLANAN_BELGELER',
+        {'Surec_ID': surecId, 'Belge_ID': belgeId},
+        conflictAlgorithm: ConflictAlgorithm.ignore,
+      );
+    } else {
+      // Tik kaldırıldıysa tablodan sil
+      await db.delete(
+        'TOPLANAN_BELGELER',
+        where: 'Surec_ID = ? AND Belge_ID = ?',
+        whereArgs: [surecId, belgeId],
+      );
+    }
+  }
+
+  // --- YENİ FONKSİYON: Favori Durumunu Değiştir ---
+  Future<void> toggleSurecFavori(int surecId, bool yeniDurum) async {
+    Database db = await database;
+    await db.update(
+      'SUREC',
+      {'Favori_Mi': yeniDurum ? 1 : 0}, // True ise 1, False ise 0 kaydet
+      where: 'Surec_ID = ?',
+      whereArgs: [surecId],
     );
   }
 

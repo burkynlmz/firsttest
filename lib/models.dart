@@ -3,13 +3,15 @@ class Surec {
   final int id;
   final String baslik;
   final int baslangicSoruId;
-  final String? aramaTerimi; // YENİ ALAN: Haritada aranacak kelime
+  final String? aramaTerimi; // Haritada aranacak kelime
+  final bool favoriMi;
 
   Surec({
     required this.id, 
     required this.baslik, 
     required this.baslangicSoruId,
     this.aramaTerimi,
+    this.favoriMi = false, // Varsayılan olarak favori değil
   });
 
   // Veritabanından gelen Map verisini (Veritabanı dili) Sınıfa (Dart dili) çevirir
@@ -19,6 +21,7 @@ class Surec {
       baslik: map['Baslik'],
       baslangicSoruId: map['Baslangic_Soru_ID'],
       aramaTerimi: map['Arama_Terimi'],
+      favoriMi: map['Favori_Mi'] == 1,
     );
   }
 }
@@ -60,11 +63,13 @@ class Belge {
   final int id;
   final String ad;
   final String? not;
+  final String? aramaTerimi; // Haritada aranacak kelime
 
   Belge({
     required this.id, 
     required this.ad, 
-    this.not
+    this.not,
+    this.aramaTerimi,
   });
 
   factory Belge.fromMap(Map<String, dynamic> map) {
@@ -72,6 +77,7 @@ class Belge {
       id: map['Belge_ID'],
       ad: map['Belge_Adi'] ?? 'İsimsiz Belge', 
       not: map['Gereklilik_Notu'], 
+      aramaTerimi: map['Arama_Terimi'], // Veritabanından okuyacak
     );
   }
 }

@@ -22,10 +22,15 @@ class _SoruEkraniState extends State<SoruEkrani> {
   String? _sonucMetni;
   Surec? _aktifSurec;
 
-  // PDF için veriler
+  // SEPET: Toplanan Belgelerin ID'leri
+  final Set<int> _toplananBelgeIdleri = {}; 
+  
+  // Sonuç ekranı için listeler
+  List<Belge> _finalBelgeListesi = [];
+  Map<int, bool> _belgeTikDurumlari = {};
+
+  // PDF Verisi
   String? _pdfSonucTipi;
-  String? _pdfBelgeAdi;
-  String? _pdfBelgeNotu;
 
   @override
   void initState() {
@@ -35,7 +40,6 @@ class _SoruEkraniState extends State<SoruEkrani> {
 
   Future<void> _baslangicSorusunuYukle() async {
     final surec = await _dbService.getSurecById(widget.surecId);
-    
     if (surec != null) {
       setState(() {
         _aktifSurec = surec;
@@ -58,59 +62,83 @@ class _SoruEkraniState extends State<SoruEkrani> {
     });
   }
 
-  // --- DÜZELTME 1: Mantık Hatası Giderildi ---
   Future<void> _cevapVer(bool evetSecildi) async {
     if (_aktifSoru == null) return;
+
+    // EVET denildiyse ve belge varsa sepete at
+    if (evetSecildi && _aktifSoru!.ilgiliBelgeId != null) {
+      _toplananBelgeIdleri.add(_aktifSoru!.ilgiliBelgeId!);
+    }
 
     final sonrakiSoruId = evetSecildi ? _aktifSoru!.evetSoruId : _aktifSoru!.hayirSoruId;
 
     if (sonrakiSoruId != null) {
-      // Sonraki soruya geç
       await _soruyuGetir(sonrakiSoruId);
     } else {
-      // SÜREÇ BİTTİ
-      // Eğer EVET seçildiyse ve süreç bittiyse bu bir Başarıdır (ONAY).
-      // Eğer HAYIR seçildiyse veritabanındaki sonucu (Muhtemelen RED) kullanırız.
       String nihaiSonuc = evetSecildi ? "ONAY" : (_aktifSoru!.sonucTipi ?? "BİLİNMİYOR");
-      
-      await _sonucuIsle(nihaiSonuc, _aktifSoru!.ilgiliBelgeId);
+      await _sonucuIsle(nihaiSonuc);
     }
   }
 
-  Future<void> _sonucuIsle(String sonucTipi, int? belgeId) async {
+  Future<void> _sonucuIsle(String sonucTipi) async {
     setState(() => _yukleniyor = true);
 
     String metin = 'Süreç tamamlandı. Sonuç: $sonucTipi';
-    String? belgeAdi = 'Yok';
-    String? belgeNotu;
-
-    if (belgeId != null) {
-      final belge = await _dbService.getDocumentById(belgeId);
-      if (belge != null) {
-        belgeAdi = belge.ad;
-        belgeNotu = belge.not;
-        metin += "\n\n📄 GEREKLİ BELGE\n------------------\n${belge.ad}\n\n📝 NOT\n${belge.not ?? 'Açıklama yok.'}";
+    
+    List<Belge> belgeler = [];
+    for (int id in _toplananBelgeIdleri) {
+      final b = await _dbService.getDocumentById(id);
+      if (b != null) {
+        belgeler.add(b);
+        bool tikliMi = await _dbService.getBelgeDurumu(widget.surecId, b.id);
+        _belgeTikDurumlari[b.id] = tikliMi;
       }
+    }
+
+    if (belgeler.isNotEmpty) {
+      metin += "\n\n(Toplam ${belgeler.length} adet gerekli belge bulundu)";
     }
 
     final yeniOturum = Oturum(
       surecId: widget.surecId,
       soruId: _aktifSoru?.id ?? 0,
-      verilenCevap: "Tip: $sonucTipi, Belge: $belgeAdi",
+      verilenCevap: "Sonuç: $sonucTipi, Belge Sayısı: ${belgeler.length}",
       cevapTarihi: DateTime.now().toIso8601String(),
       aktifMi: 0,
     );
-
     await _dbService.insertSession(yeniOturum);
 
     setState(() {
       _aktifSoru = null;
       _sonucMetni = metin;
-      _pdfSonucTipi = sonucTipi; // Düzeltilmiş sonucu PDF'e gönderiyoruz
-      _pdfBelgeAdi = belgeAdi;
-      _pdfBelgeNotu = belgeNotu;
+      _pdfSonucTipi = sonucTipi;
+      _finalBelgeListesi = belgeler;
       _yukleniyor = false;
     });
+  }
+
+  Future<void> _checklistDegistir(int belgeId, bool? yeniDeger) async {
+    if (yeniDeger == null) return;
+    await _dbService.toggleBelgeDurumu(widget.surecId, belgeId, yeniDeger);
+    setState(() {
+      _belgeTikDurumlari[belgeId] = yeniDeger;
+    });
+  }
+
+  // --- YENİ: AKILLI KONUM BULUCU ---
+  // Listeyi tarar, tiklenmemiş ilk belgenin yerini döndürür.
+  // Hepsi tikliyse sürecin ana yerini döndürür.
+  String? _hedefKonumuBul() {
+    // 1. Önce eksik belgeleri kontrol et
+    for (var belge in _finalBelgeListesi) {
+      bool tikli = _belgeTikDurumlari[belge.id] ?? false;
+      // Eğer belge tiklenmemişse VE bir arama terimi varsa
+      if (!tikli && belge.aramaTerimi != null) {
+        return belge.aramaTerimi;
+      }
+    }
+    // 2. Eksik belge yoksa ana kurumun yerini döndür
+    return _aktifSurec?.aramaTerimi;
   }
 
   Future<void> _haritayiAc(String aramaTerimi) async {
@@ -122,9 +150,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
       }
     } catch (e) {
       debugPrint("Harita hatası: $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Harita uygulaması açılamadı.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Harita açılamadı.")));
     }
   }
 
@@ -148,13 +174,21 @@ class _SoruEkraniState extends State<SoruEkrani> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // DURUM 1: SONUÇ GÖSTERİLİYOR
+    // SONUÇ EKRANI
     if (_sonucMetni != null) {
-      
-      // --- DÜZELTME 2: İkon ve Renk Mantığı ---
       bool basariliMi = _pdfSonucTipi == "ONAY";
       Color sonucRengi = basariliMi ? Colors.green : Colors.red;
       IconData sonucIkonu = basariliMi ? Icons.check_circle_outline : Icons.cancel_outlined;
+
+      // Akıllı konum bulucuyu çalıştır
+      String? hedefKonum = _hedefKonumuBul();
+      
+      // Buton yazısını hazırla
+      String butonYazisi = "EN YAKIN KURUMU BUL";
+      if (hedefKonum != null && _finalBelgeListesi.isNotEmpty && hedefKonum != _aktifSurec?.aramaTerimi) {
+        // Eğer belge için arama yapıyorsak ismini yazalım
+        butonYazisi = "EN YAKIN ${hedefKonum.toUpperCase()} BUL";
+      }
 
       return Center(
         child: SingleChildScrollView(
@@ -164,39 +198,82 @@ class _SoruEkraniState extends State<SoruEkrani> {
               Icon(sonucIkonu, size: 80, color: sonucRengi),
               const SizedBox(height: 20),
               Text(
-                _sonucMetni!,
-                style: const TextStyle(fontSize: 18, height: 1.5),
+                "Süreç Tamamlandı: $_pdfSonucTipi",
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: sonucRengi),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 30),
+              const SizedBox(height: 20),
+
+              // CHECKLIST
+              if (_finalBelgeListesi.isNotEmpty)
+                Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  margin: const EdgeInsets.only(bottom: 20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 10, bottom: 10),
+                          child: Text("GEREKLİ BELGELER LİSTESİ", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo)),
+                        ),
+                        ..._finalBelgeListesi.map((belge) {
+                          bool tikli = _belgeTikDurumlari[belge.id] ?? false;
+                          return CheckboxListTile(
+                            title: Text(
+                              belge.ad,
+                              style: TextStyle(
+                                decoration: tikli ? TextDecoration.lineThrough : null,
+                                color: tikli ? Colors.grey : Colors.black,
+                              ),
+                            ),
+                            subtitle: Text(belge.not ?? ""),
+                            value: tikli,
+                            activeColor: Colors.green,
+                            onChanged: (val) => _checklistDegistir(belge.id, val),
+                          );
+                        }).toList(),
+                      ],
+                    ),
+                  ),
+                )
+              else 
+                const Padding(
+                  padding: EdgeInsets.all(20.0),
+                  child: Text("Bu işlem için herhangi bir belge gerekmemektedir.", style: TextStyle(color: Colors.grey)),
+                ),
 
               // PDF Butonu
-              ElevatedButton.icon(
-                onPressed: () {
-                  _pdfService.raporOlustur(
-                    sonucTipi: _pdfSonucTipi!,
-                    belgeAdi: _pdfBelgeAdi,
-                    belgeNotu: _pdfBelgeNotu,
-                  );
-                },
-                icon: const Icon(Icons.picture_as_pdf),
-                label: const Text('SONUCU PDF OLARAK İNDİR'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  minimumSize: const Size(250, 45),
+              if (_finalBelgeListesi.isNotEmpty)
+                ElevatedButton.icon(
+                  onPressed: () {
+                     String adlar = _finalBelgeListesi.map((b) => "- ${b.ad}").join("\n");
+                     String notlar = _finalBelgeListesi.map((b) => "${b.ad}: ${b.not ?? '-'}").join("\n");
+                    _pdfService.raporOlustur(
+                      sonucTipi: _pdfSonucTipi!,
+                      belgeAdi: adlar,
+                      belgeNotu: notlar,
+                    );
+                  },
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('SONUCU PDF OLARAK İNDİR'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    minimumSize: const Size(250, 45),
+                  ),
                 ),
-              ),
               
               const SizedBox(height: 15),
 
-              // Harita Butonu
-              if (_aktifSurec?.aramaTerimi != null)
+              // AKILLI HARİTA BUTONU
+              if (hedefKonum != null)
                 ElevatedButton.icon(
-                  onPressed: () => _haritayiAc(_aktifSurec!.aramaTerimi!),
+                  onPressed: () => _haritayiAc(hedefKonum),
                   icon: const Icon(Icons.map),
-                  label: const Text('EN YAKIN KURUMU BUL'),
+                  label: Text(butonYazisi), // Dinamik yazı
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blueAccent,
                     foregroundColor: Colors.white,
@@ -220,7 +297,7 @@ class _SoruEkraniState extends State<SoruEkrani> {
       );
     }
 
-    // DURUM 2: SORU GÖSTERİLİYOR
+    // SORU EKRANI
     if (_aktifSoru != null) {
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
