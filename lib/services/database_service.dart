@@ -40,7 +40,7 @@ class DatabaseService {
     }
     
     return await openDatabase(path, 
-      version: 5, // Versiyonu artırdık ki onUpgrade çalışsın
+      version: 6, // Versiyonu artırdık ki onUpgrade çalışsın
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           print("Veritabanı güncelleniyor: Tabloya Arama_Terimi ekleniyor...");
@@ -102,6 +102,18 @@ class DatabaseService {
           
           // Öğrenci Belgesi -> Okul veya E-Devlet (Haritada Okul aratabiliriz)
           await db.execute("UPDATE BELGELER SET Arama_Terimi = 'Milli Eğitim Müdürlüğü' WHERE Belge_Adi LIKE '%Öğrenci%'");
+        }
+
+        // YENİ GÜNCELLEME (Versiyon 6 - Konum Düzeltmesi)
+        if (oldVersion < 6) {
+          print("Veritabanı v6'ya yükseltiliyor: Belediye Formu konumu düzeltiliyor...");
+          
+          // Hatalı olan 'Kırtasiye' konumunu 'Belediye İmar İşleri' olarak değiştiriyoruz
+          await db.execute("""
+            UPDATE BELGELER 
+            SET Arama_Terimi = 'Belediye İmar İşleri' 
+            WHERE Belge_Adi = 'Belediye Ruhsat Başvuru Formu'
+          """);
         }
 
       },
